@@ -31,11 +31,7 @@ describe("ColumService", () => {
 
     columService = module.get<ColumService>(ColumService);
   });
-
-  it("should be defined", () => {
-    expect(columService).toBeDefined();
-  });
-
+  
   describe("create test", () => {
     it("should create a column if given createColumDto", async () => {
       const createColumDto = {

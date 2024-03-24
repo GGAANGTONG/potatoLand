@@ -1,6 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { BoardService } from "./board.service";
-import { JwtService } from "@nestjs/jwt";
+import { JsonWebTokenError, JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { Board } from "./entities/board.entity";
 import { Repository } from "typeorm";
@@ -23,26 +23,24 @@ import * as nodemailer from "nodemailer";
 import { UpdateMemberDto } from "./dto/updateMember.dto";
 import { DeleteMemberDto } from "./dto/deleteMember.dto";
 
-jest.mock("nodemailer");
+let sendMailMock = jest.fn().mockResolvedValue(true); // sendMail 메서드를 모킹
+jest.mock("nodemailer", () => ({
+  createTransport: () => ({
+    sendMail: sendMailMock,
+  }),
+}));
 
 describe("BoardService", () => {
   let boardService: BoardService;
   let jwtService: Partial<JwtService>;
+  let configService: Partial<ConfigService>;
   let boardRepository: Partial<Record<keyof Repository<Board>, jest.Mock>>;
   let boardMemberRepository: Partial<
     Record<keyof Repository<BoardMember>, jest.Mock>
   >;
   let userRepository: Partial<Record<keyof Repository<User>, jest.Mock>>;
-  let sendMailMock: jest.Mock;
 
   beforeEach(async () => {
-    sendMailMock = jest.fn().mockResolvedValue(true); // sendMail 메서드를 모킹합니다.
-
-    const mockedNodemailer = nodemailer as jest.Mocked<typeof nodemailer>;
-    mockedNodemailer.createTransport.mockReturnValue({
-      sendMail: sendMailMock,
-    } as unknown as nodemailer.Transporter); // Transporter 타입으로 캐스팅합니다.
-
     boardRepository = {
       save: jest.fn(),
       update: jest.fn(),
@@ -74,10 +72,18 @@ describe("BoardService", () => {
       }),
     };
 
+    configService = {
+      get: jest.fn((key) => {
+        if (key === "JWT_SECRET_BOARD") return "jwt-secret-board";
+        else if (key === "SERVER_PORT") return "server-port";
+        else if (key === "GMAIL_USER_BOARD") return "gmail-user-board";
+        else if (key === "GMAIL_PASS_BOARD") return "gmail-pass-board";
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BoardService,
-        ConfigService,
         {
           provide: JwtService,
           useValue: jwtService,
@@ -94,11 +100,14 @@ describe("BoardService", () => {
           provide: getRepositoryToken(User),
           useValue: userRepository,
         },
+        {
+          provide: ConfigService,
+          useValue: configService,
+        },
       ],
     }).compile();
 
     boardService = module.get<BoardService>(BoardService);
-    jwtService = module.get<JwtService>(JwtService);
   });
 
   afterEach(() => {
@@ -375,7 +384,14 @@ describe("BoardService", () => {
         1,
       );
       expect(userRepository.findOneBy).toHaveBeenCalledWith({ id: 3 });
-      expect(jwtService.sign).toHaveBeenCalled();
+      const payload = {
+        userId: inviteBoardDto.userId,
+        role: inviteBoardDto.role,
+        boardId: 1,
+      };
+      expect(jwtService.sign).toHaveBeenCalledWith(payload, {
+        expiresIn: `${inviteBoardDto.expiresIn}h`,
+      });
       expect(sendMailMock).toHaveBeenCalled();
       expect(sendMailMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -499,56 +515,63 @@ describe("BoardService", () => {
   ///////////////////////////////////////////////////////////////////////////////
 
   describe("confirm test", () => {
-    // const thirdUser = {
-    //   id: 3,
-    //   email: "test3@test.com",
-    //   password: "testing0*",
-    //   name: "test3",
-    // } as User;
+    const thirdUser = {
+      id: 3,
+      email: "test3@test.com",
+      password: "testing0*",
+      name: "test3",
+    } as User;
 
-    // const thirdBoardMember = {
-    //   id: 1,
-    //   role: BoardMemberType.MEMBER,
-    //   user: thirdUser,
-    // } as BoardMember;
+    const thirdBoardMember = {
+      id: 1,
+      role: BoardMemberType.MEMBER,
+      user: thirdUser,
+    } as BoardMember;
 
-    // const token = "jwt-token";
+    const token = "jwt-token";
 
-    // it("should put user into boardMember if token is verified", async () => {
-    //   userRepository.findOneBy.mockResolvedValue(thirdUser);
-    //   boardRepository.findOneBy.mockResolvedValue(board);
+    it("should put user into boardMember if token is verified", async () => {
+      userRepository.findOneBy.mockResolvedValue(thirdUser);
+      boardRepository.findOneBy.mockResolvedValue(board);
 
-    //   // act
-    //   const result = await boardService.confirm(token);
+      // act
+      const result = await boardService.confirm(token);
 
-    //   // assert
-    //   expect(jwtService.verify).toHaveBeenCalledTimes(1);
-    //   expect(jwtService.verify).toHaveBeenCalledWith(
-    //     expect.objectContaining({ token }),
-    //   );
-    //   expect(userRepository.findOneBy).toHaveBeenCalledTimes(1);
-    //   expect(userRepository.findOneBy).toHaveBeenCalledWith({ id: 3 });
-    //   expect(boardRepository.findOneBy).toHaveBeenCalledWith({ id: 1 });
-    //   expect(result).toEqual({ message: `1번 보드에 초대되셨습니다.` });
-    // });
+      // assert
+      expect(jwtService.verify).toHaveBeenCalledTimes(1);
+      expect(jwtService.verify).toHaveBeenCalledWith(token, {
+        secret: "jwt-secret-board",
+      });
+      expect(userRepository.findOneBy).toHaveBeenCalledTimes(1);
+      expect(userRepository.findOneBy).toHaveBeenCalledWith({ id: 3 });
+      expect(boardRepository.findOneBy).toHaveBeenCalledWith({ id: 1 });
+      expect(result).toEqual({ message: `1번 보드에 초대되셨습니다.` });
+    });
 
-    // it("should throw NotFoundException if user doesn't exist", async () => {
-    //   userRepository.findOneBy.mockResolvedValue(null);
-    //   await expect(boardService.confirm(token)).rejects.toThrow(
-    //     NotFoundException,
-    //   );
-    // });
+    it("should throw NotFoundException if user doesn't exist", async () => {
+      userRepository.findOneBy.mockResolvedValue(null);
+      await expect(boardService.confirm(token)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
 
-    // it("should throw NotFoundException if board doesn't exist", async () => {
-    //   userRepository.findOneBy.mockResolvedValue(thirdUser);
-    //   boardRepository.findOneBy.mockResolvedValue(null);
-    //   await expect(boardService.confirm(token)).rejects.toThrow(
-    //     NotFoundException,
-    //   );
-    // });
+    it("should throw NotFoundException if board doesn't exist", async () => {
+      userRepository.findOneBy.mockResolvedValue(thirdUser);
+      boardRepository.findOneBy.mockResolvedValue(null);
+      await expect(boardService.confirm(token)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
 
     it("should throw UnauthorizedException if token is not valid", async () => {
       const falseToken = "false-jwt-token";
+
+      userRepository.findOneBy.mockResolvedValue(thirdUser);
+      boardRepository.findOneBy.mockResolvedValue(board);
+      jest.spyOn(jwtService, "verify").mockImplementation(() => {
+        throw new JsonWebTokenError("유효하지 않은 토큰입니다.");
+      });
+
       await expect(boardService.confirm(falseToken)).rejects.toThrow(
         UnauthorizedException,
       );

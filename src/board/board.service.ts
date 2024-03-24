@@ -15,7 +15,7 @@ import _ from "lodash";
 import { BoardMemberType } from "./types/boardMember.type";
 import { UpdateBoardDto } from "./dto/updateBoard.dto";
 import { InviteBoardDto } from "./dto/inviteBoard.dto";
-import { JwtService } from "@nestjs/jwt";
+import { JsonWebTokenError, JwtService, TokenExpiredError } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import * as nodemailer from "nodemailer";
 import { UpdateMemberDto } from "./dto/updateMember.dto";
@@ -126,8 +126,8 @@ export class BoardService {
     ) {
       throw new ForbiddenException("인가되지 않은 권한입니다.");
     }
-    const {userId} = inviteBoardDto;
-    const {expiresIn} = inviteBoardDto;
+    const { userId } = inviteBoardDto;
+    const { expiresIn } = inviteBoardDto;
     let { role } = inviteBoardDto;
 
     const isExist = board.members.filter(
@@ -203,7 +203,13 @@ export class BoardService {
 
       return { message: `${boardId}번 보드에 초대되셨습니다.` };
     } catch (err) {
-      throw new UnauthorizedException("유효하지 않은 토큰입니다.");
+      if (
+        err instanceof TokenExpiredError ||
+        err instanceof JsonWebTokenError
+      ) {
+        throw new UnauthorizedException("유효하지 않은 토큰입니다.");
+      }
+      throw err;
     }
   }
 

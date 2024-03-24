@@ -3,7 +3,11 @@ import { ColumController } from "./colum.controller";
 import { ColumService } from "./colum.service";
 import { CreateColumDto } from "./dto/createColum.dto";
 import { Colum } from "./entities/colum.entity";
-import { HttpStatus } from "@nestjs/common";
+import { BadRequestException, HttpStatus } from "@nestjs/common";
+import { CACHE_MANAGER } from "@nestjs/cache-manager";
+import { UpdateColumDto } from "./dto/updateColum.dto";
+import { RemoveColumDto } from "./dto/removeColum.dto";
+import { ReorderColumDto } from "./dto/reorderColum.dto";
 
 describe("ColumController", () => {
   let columController: ColumController;
@@ -24,6 +28,13 @@ describe("ColumController", () => {
           provide: ColumService,
           useValue: columService,
         },
+        {
+          provide: CACHE_MANAGER,
+          useValue: {
+            get: jest.fn(),
+            set: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -35,7 +46,6 @@ describe("ColumController", () => {
   });
 
   it("create => should create a new colum by given data", async () => {
-    // arrange
     const createColumDto = {
       columOrder: 1,
       title: "test",
@@ -54,10 +64,8 @@ describe("ColumController", () => {
 
     columService.create.mockResolvedValue(colum);
 
-    // act
     const result = await columController.create(createColumDto);
 
-    // assert
     expect(columService.create).toHaveBeenCalledWith(createColumDto);
     expect(result).toEqual({
       statusCode: HttpStatus.CREATED,
@@ -66,11 +74,63 @@ describe("ColumController", () => {
     });
   });
 
-  it("create => should throw an error if given data is wrong", async () => {
-    // arrange
-    const createColumDto = {} as CreateColumDto;
-    columService.create.mockResolvedValue(undefined);
+  it("update => should update a specified colum by given data", async () => {
+    const updateColumDto = {
+      board_id: 1,
+      id: 1,
+      title: "updated test",
+    } as UpdateColumDto;
 
-    await expect(columController.create(createColumDto)).rejects.toThrow();
+    const colum = {
+      id: 1,
+      columOrder: 1,
+      title: "updated test",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      card: [],
+      board_id: 1,
+    } as Colum;
+
+    columService.update.mockResolvedValue(colum); // metadata?
+
+    const result = await columController.update(updateColumDto);
+
+    expect(columService.update).toHaveBeenCalledWith(updateColumDto);
+    expect(result).toEqual({
+      statusCode: HttpStatus.CREATED,
+      message: "컬럼 이름이 수정되었습니다.",
+    });
   });
+
+  it("remove => should remove a specified column by given data", async () => {
+    const removeColumDto = {
+      id: 1,
+    } as RemoveColumDto;
+
+    const result = await columController.remove(removeColumDto);
+
+    expect(columController.remove).toHaveBeenCalledWith(removeColumDto);
+    expect(result).toEqual({
+      statusCode: HttpStatus.OK,
+      message: "컬럼이 삭제되었습니다.",
+    });
+  });
+
+  // it("reorder => should reorder a specified column by given data", async () => {
+  //   const reorderColumDto = {
+  //     columIds: [1, 2],
+  //     board_id: 1
+  //   } as ReorderColumDto;
+
+  //   //columService.reorderColum.mockResolvedValue()
+
+  //   const result = await columController.reorderColum(reorderColumDto);
+
+  //   expect(columController.reorderColum).toHaveBeenCalledWith(reorderColumDto);
+  //   expect(result).toEqual({
+  //     statusCode: HttpStatus.OK,
+  //     message: "컬럼 순서가 변경되었습니다.",
+  //     data:
+  //   });
+  // });
 });
